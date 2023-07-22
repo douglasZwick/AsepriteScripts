@@ -1,7 +1,7 @@
 ---------------------------
 -- 
 -- FILE
---   Normalized average.lua
+--   Color Slerp.lua
 -- 
 -- AUTHOR
 --   Doug Zwick
