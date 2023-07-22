@@ -9,34 +9,89 @@
 -- CREATED
 --   22 July 2023
 -- 
--- Averages the FG and BG colors, normalizes the result in OpenGL normal map
--- space, reconverts that into RGB space, and sets the FG color to be that color
+-- Converts the FG and BG colors into normal space points, then slerps halfway
+-- between them, converts the result back into a color, and sets it that as the
+-- new FG color.
 -- 
 ---------------------------
 
 
-function NormalizedAverage(c0, c1)
-  -- Normally we'd want to use the slerp function, but since we always want the
-  -- exact midpoint, we can just average the values and then normalize the
-  -- vector, and the result will be precisely the same as if we had slerped.
-  local x = (c0.red   + c1.red)   / 2 -- in 0 to 255 range
-  local y = (c0.green + c1.green) / 2 -- in 0 to 255 range
-  local z = (c0.blue  + c1.blue)  / 2 -- in 0 to 255 range
-  x = 2 * (x / 255) - 1 -- in -1.0 to 1.0 range
-  y = 2 * (y / 255) - 1 -- in -1.0 to 1.0 range
-  z = 2 * (z / 255) - 1 -- in -1.0 to 1.0 range
-  local magnitude = math.sqrt(x * x + y * y + z * z)
-  x = x / magnitude
-  y = y / magnitude
-  z = z / magnitude
-  x = 255 * (x + 1) / 2 -- in 0 to 255 range
-  y = 255 * (y + 1) / 2 -- in 0 to 255 range
-  z = 255 * (z + 1) / 2 -- in 0 to 255 range
-  return Color{ r = x, g = y, b = z, a = c0.alpha }
+function Dot(p0, p1)
+  return p0.x * p1.x + p0.y * p1.y + p0.z * p1.z
+end
+
+function PointScale(n, p)
+  return { x = p.x * n, y = p.y * n, z = p.z * n }
+end
+
+function PointSum(p0, p1)
+  return { x = p0.x + p1.x, y = p0.y + p1.y, z = p0.z + p1.z }
+end
+
+function PointLerp(p0, p1, t)
+  return { x = Lerp(p0.x, p1.x, t),
+           y = Lerp(p0.y, p1.y, t),
+           z = Lerp(p0.z, p1.z, t) }
+end
+
+function Magnitude(p)
+  return math.sqrt(Dot(p, p))
+end
+
+function Normalize(p)
+  return PointScale(1 / Magnitude(p), p)
+end
+
+function Slerp(p0, p1, t)
+  p0 = Normalize(p0)
+  p1 = Normalize(p1)
+  local dot = Dot(p0, p1)
+
+  if dot <= -0.999 then return { x = 0, y = 0, z = 1 } end
+  if dot >= 0.999 then return PointLerp(p0, p1, t) end
+
+  local o = math.acos(dot)
+  local sine = math.sin(o)
+  local leftScalar = math.sin((1 - t) * o) / sine
+  local rightScalar = math.sin(t * o) / sine
+  return PointSum(PointScale(leftScalar, p0), PointScale(rightScalar, p1))
+end
+
+function ByteToNormal(byte)
+  return 2 * byte / 255 - 1
+end
+
+function NormalToByte(n)
+  return 255 * (n + 1) / 2
+end
+
+function ColorToNormal(c)
+  return { x = ByteToNormal(c.red),
+           y = ByteToNormal(c.green),
+           z = ByteToNormal(c.blue) }
+end
+
+function NormalToColor(p)
+  return Color{ r = NormalToByte(p.x),
+                g = NormalToByte(p.y),
+                b = NormalToByte(p.z) }
+end
+
+function SameColor(c0, c1)
+  return c0.red == c1.red and c0.green == c1.green and c0.blue == c1.blue
+end
+
+function ColorSlerp(c0, c1, t)
+  if SameColor(c0, c1) then return c0 end
+
+  local p0 = ColorToNormal(c0)
+  local p1 = ColorToNormal(c1)
+  local normal = Slerp(p0, p1, t)
+  return NormalToColor(normal)
 end
 
 do
   local fg = app.fgColor
   local bg = app.bgColor
-  app.fgColor = NormalizedAverage(fg, bg, 0.5)
+  app.fgColor = ColorSlerp(fg, bg, 0.5)
 end
